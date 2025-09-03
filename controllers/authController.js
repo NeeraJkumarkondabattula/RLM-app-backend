@@ -49,18 +49,26 @@ exports.register = async (req, res) => {
       return res.status(400).json({ message: "User already exists" });
 
     let hashedPassword;
+
     if (password) {
+      // 🔑 Register with password
       const salt = await bcrypt.genSalt(10);
       hashedPassword = await bcrypt.hash(password, salt);
     } else if (otp) {
-      const record = await OTP.findOne({ email, otp });
+      // 🔑 Register with OTP
+      const record = await OTP.findOne({ email, otp: String(otp) }); // ensure string match
       if (!record) return res.status(400).json({ message: "Invalid OTP" });
       if (record.expiresAt < new Date())
         return res.status(400).json({ message: "OTP expired" });
+
       await OTP.deleteMany({ email });
     }
 
-    const user = await User.create({ email, password: hashedPassword });
+    const user = await User.create({
+      email,
+      password: hashedPassword || null,
+    });
+
     const token = jwt.sign(
       { userId: user._id, email },
       process.env.JWT_SECRET,
@@ -69,7 +77,7 @@ exports.register = async (req, res) => {
 
     res.json({ token, message: "Registration successful" });
   } catch (error) {
-    console.error(error);
+    console.error("REGISTER ERROR:", error);
     res.status(500).json({ message: "Registration failed" });
   }
 };
@@ -88,10 +96,11 @@ exports.login = async (req, res) => {
     if (!user) return res.status(400).json({ message: "Invalid credentials" });
 
     let isAuthenticated = false;
+
     if (password && user.password) {
       isAuthenticated = await bcrypt.compare(password, user.password);
     } else if (otp) {
-      const record = await OTP.findOne({ email, otp });
+      const record = await OTP.findOne({ email, otp: String(otp) }); // ensure string
       if (record && record.expiresAt >= new Date()) {
         isAuthenticated = true;
         await OTP.deleteMany({ email });
@@ -106,9 +115,10 @@ exports.login = async (req, res) => {
       process.env.JWT_SECRET,
       { expiresIn: "1h" }
     );
+
     res.json({ token, message: "Login successful" });
   } catch (error) {
-    console.error(error);
+    console.error("LOGIN ERROR:", error);
     res.status(500).json({ message: "Login failed" });
   }
 };
